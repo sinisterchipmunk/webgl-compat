@@ -46,6 +46,10 @@ var WebGLCompatibilityLayer = (function() {
         case this.MAX_VIEWPORT_DIMS: return state.viewport.subarray(2, 4);
         case this.SCISSOR_TEST: return state.scissor_test_enabled;
         case this.SCISSOR_BOX: return state.scissor_box;
+        case this.VERSION: return "WebGL 1.0 Compatability Layer v1.0";
+        case this.SHADING_LANGUAGE_VERSION: return "WebGL ES 1.0 Compatability Layer v1.0";
+        case this.VENDOR: return "http://github.com/sinisterchipmunk/webgl-compat";
+        case this.RENDERER: return "WebGL Compatability Layer";
         default: throw new Error("Unexpected enum: "+glEnum);
       };
     };
