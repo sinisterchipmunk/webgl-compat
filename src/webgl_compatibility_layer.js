@@ -9,6 +9,8 @@ var WebGLCompatibilityLayer = (function() {
     
     var state = new WebGLState(c2d);
     var contextAttributes = new WebGLContextAttributes();
+    
+    var defaultFramebuffer = state.bindings.framebuffer;
 
     // "readonly" attributes
     this.canvas = canvas;
@@ -21,6 +23,11 @@ var WebGLCompatibilityLayer = (function() {
     for (var konst in WEBGL_CONSTANTS)
       this[konst] = WEBGL_CONSTANTS[konst];
       
+    function generateError(which) {
+      if (typeof(which) == 'number')
+        state.error = which;
+      else throw which;
+    }
       
     this.getError = function() {
       return state.error;
@@ -40,6 +47,41 @@ var WebGLCompatibilityLayer = (function() {
       state.scissor_box[2] = w; state.scissor_box[3] = h;
     };
     
+    this.createFramebuffer = function() {
+      return new WebGLFramebuffer();
+    };
+    
+    this.deleteFramebuffer = function(fb) {
+      if (fb === defaultFramebuffer) return;
+      if (state.bindings.framebuffer === fb)
+        state.bindings.framebuffer = defaultFramebuffer;
+      fb.dispose();
+    };
+    
+    this.bindFramebuffer = function(fb) {
+      if (fb == null) fb = defaultFramebuffer;
+      state.bindings.framebuffer = fb;
+      state.bindings.framebuffer.prepare();
+    };
+    
+    this.getFramebufferAttachmentParameter = function(target, attachment, pname) {
+      if (state.bindings.framebuffer == defaultFramebuffer) generateError(this.INVALID_OPERATION);
+      else
+        switch(target) {
+          case this.FRAMEBUFFER:
+            try { return state.bindings.framebuffer.getAttachmentParameter(attachment, pname) }
+            catch(e) { generateError(e); }
+          default:
+            generateError(this.INVALID_ENUM);
+        }
+      return 0;
+    };
+    
+    this.isFramebuffer = function(fb) {
+      return fb && (fb instanceof WebGLFramebuffer) && fb.isPrepared();
+    };
+    
+    
     this.get = function(glEnum) {
       switch(glEnum) {
         case this.VIEWPORT: return state.viewport;
@@ -50,6 +92,7 @@ var WebGLCompatibilityLayer = (function() {
         case this.SHADING_LANGUAGE_VERSION: return "WebGL ES 1.0 Compatability Layer v1.0";
         case this.VENDOR: return "http://github.com/sinisterchipmunk/webgl-compat";
         case this.RENDERER: return "WebGL Compatability Layer";
+        case this.FRAMEBUFFER_BINDING: return state.bindings.framebuffer;
         default: throw new Error("Unexpected enum: "+glEnum);
       };
     };
