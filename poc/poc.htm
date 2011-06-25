@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="./glMatrix-0.9.5.min.js" type="text/javascript"></script>
+<script>
+var frames = 0;
+function updateFPS() {
+  frames = frames || 0;
+	frames++;
+	if (!this.last) this.last = new Date();
+	var cur = new Date();
+	var diff = cur - this.last;
+	if (diff > 1000.0) {
+		document.getElementById('fps').innerHTML = "FPS: "+frames;
+		frames = 0;
+  	this.last = cur;
+	}
+}
+
+glMatrixArrayType.prototype.toString = function() {
+	if (this.length == 0) return "[]";
+	var str = "[";
+  for (var i = 0; i < this.length-1; i++) str = str + this[i] + ",";
+	str = str + this[this.length-1] + "]";
+	return str;
+};
+
+function Context(canvas) {
+  if (typeof(canvas) == "string") canvas = document.getElementById(canvas);
+  this.context = canvas.getContext("2d");
+	this.framebuffer = this.context.createImageData(canvas.width, canvas.height);
+	
+	var grad2Canvas = document.createElement('canvas');
+	grad2Canvas.width = grad2Canvas.height = 2;
+	this.gradient2x2Context = grad2Canvas.getContext('2d');
+  this.gradient2x2Context.fillStyle = 'rgba(0,0,0,1)';
+  this.gradient2x2Context.fillRect(0, 0, 2, 2);
+	this.gradient = this.gradient2x2Context.getImageData(0, 0, 2, 2);
+  
+	var gradientCanvas = document.createElement('canvas');
+	gradientCanvas.width = gradientCanvas.height = 256;
+	this.gradientContext = gradientCanvas.getContext('2d');
+	this.gradientContext.translate(-256 / 2, -256 / 2);
+	this.gradientContext.scale(256, 256);
+
+	this.dirty = new glMatrixArrayType(4);
+
+	this.matrix = {
+		model: mat4.identity(mat4.create()),
+		view: mat4.identity(mat4.create()),
+		projection: mat4.perspective(45, 400/300, 0.01, 100.0, mat4.create())
+	};
+}
+
+(function() {
+  function texturePath(context, x0, y0, x1, y1, x2, y2, bitmap, u0, v0, u1, v1, u2, v2 ) {
+		var a, b, c, d, e, f, det, idet,
+		width = bitmap.width - 1,
+		height = bitmap.height - 1;
+
+		u0 *= width; v0 *= height;
+		u1 *= width; v1 *= height;
+		u2 *= width; v2 *= height;
+
+		x1 -= x0; y1 -= y0;
+		x2 -= x0; y2 -= y0;
+
+		u1 -= u0; v1 -= v0;
+		u2 -= u0; v2 -= v0;
+
+		det = u1 * v2 - u2 * v1;
+
+		if ( det == 0 ) return;
+
+		idet = 1 / det;
+
+		a = ( v2 * x1 - v1 * x2 ) * idet;
+		b = ( v2 * y1 - v1 * y2 ) * idet;
+		c = ( u1 * x2 - u2 * x1 ) * idet;
+		d = ( u1 * y2 - u2 * y1 ) * idet;
+
+		e = x0 - a * u0 - c * v0;
+		f = y0 - b * u0 - d * v0;
+
+		context.save();
+		context.transform( a, b, c, d, e, f );
+	  context.clip();
+		context.drawImage( bitmap, 0, 0 );
+		context.restore();
+ 	}
+  
+  function encodeDepth(depth, map, offset) {
+  	depth = parseInt(depth * 16581375);
+  	var r = parseInt(depth / 65025);
+  	depth = depth % 65025;
+  	var g = parseInt(depth / 255);
+  	var b = depth % 255;
+
+    if (map.data) map = map.data;
+    
+  	map[offset  ] = r;
+    map[offset+1] = g;
+    map[offset+2] = b;
+    map[offset+3] = 255;
+  }
+
+  function decodeDepth(r, g, b) {
+    return (b + (g * 255) + (r * 65025)) / 16581375;
+  }
+
+  // similar to a geometry shader, we'll just plot into NDC per the OGL ff pipeline for now
+  function geometry(c) {
+		var iv = mat4.inverse(c.matrix.view, mat4.create());
+		var mv = mat4.multiply(iv, c.matrix.model, mat4.create());
+	  var mvp = mat4.multiply(c.matrix.projection, mv, mat4.create());
+  	mat4.multiplyVec4(mvp, c.gl_Position, c.gl_Position);
+
+		if (c.gl_Position[3] != 0) vec3.scale(c.gl_Position, 1/c.gl_Position[3], c.gl_Position);
+  }
+  
+  // similar to a fragment shader, we'll just return opaque red for now
+  function fragment(c) {
+    c.gl_FragColor[0] = 1;
+    c.gl_FragColor[1] = 0;
+    c.gl_FragColor[2] = 0;
+    c.gl_FragColor[3] = 1;
+  }
+  
+  function triangleGradient(c, r0, g0, b0, a0, r1, g1, b1, a1, r2, g2, b2, a2, r3, g3, b3, a3) {
+    // because we have to work with a quad and not a tri, we need to check *3 and if it doesn't exist (e.g. a triangle)
+    // we need to assign it to *0 to prevent artifacts along the *1*2 edge.
+    if (arguments.length == 2) {
+      for (var i = 0; i < r0.length; i++) c.gradient.data[i] = r0[i];
+      if (r0.length == 12) {
+        c.gradient.data[12] = r0[0]; c.gradient.data[13] = r0[1];
+        c.gradient.data[14] = r0[2]; c.gradient.data[15] = r0[3];
+      }
+    }
+    else {
+      if (arguments.length < 16) { r3 = r0; g3 = g0; b3 = b0; a3 = a0; }
+      c.gradient.data[0 ] = r0; c.gradient.data[1 ] = g0; c.gradient.data[2 ] = b0; c.gradient.data[3 ] = a0;
+      c.gradient.data[4 ] = r1; c.gradient.data[5 ] = g1; c.gradient.data[6 ] = b1; c.gradient.data[7 ] = a1;
+      c.gradient.data[8 ] = r2; c.gradient.data[9 ] = g2; c.gradient.data[10] = b2; c.gradient.data[11] = a2;
+      c.gradient.data[12] = r3; c.gradient.data[13] = g3; c.gradient.data[14] = b3; c.gradient.data[15] = a3;
+    }
+    c.gradient2x2Context.putImageData(c.gradient, 0, 0);
+    c.gradientContext.drawImage(c.gradient2x2Context.canvas, 0, 0);
+  }
+  
+  // returns true if the vertex is visible, false otherwise
+  function plotVertex(c, vertices, i, offset) {
+	  for (j = 0; j < 3; j++) c.gl_Position[j] = vertices[offset+j];
+	  c.gl_Position[3] = 1.0;
+
+	  geometry(c);
+
+	  // scale to 0..1
+	  c.gl_Position[0] = (c.gl_Position[0] + 1.0) * 0.5;
+    c.gl_Position[1] = (c.gl_Position[1] + 1.0) * 0.5;
+    c.gl_Position[2] = (c.gl_Position[2] + 1.0) * 0.5;
+    
+    c.fragments[i][0] = c.gl_Position[0] * c.context.canvas.width;
+    c.fragments[i][1] = c.context.canvas.height - c.gl_Position[1] * c.context.canvas.height;
+    c.context.lineTo(c.fragments[i][0], c.fragments[i][1]);
+
+    // fragment culling
+    if (c.gl_Position[0] < 0.0 || c.gl_Position[0] > 1.0) return false;
+    if (c.gl_Position[1] < 0.0 || c.gl_Position[1] > 1.0) return false;
+    if (c.gl_Position[2] < 0.0 || c.gl_Position[2] > 1.0) return false;
+
+    c.gl_FragCoord = c.gl_Position;
+	  c.gl_FragColor = c.gl_FragColor || new glMatrixArrayType(4);
+
+		fragment(c);
+
+		c.vertexColors[i*4  ] = c.gl_FragColor[0] * 255;
+		c.vertexColors[i*4+1] = c.gl_FragColor[1] * 255;
+		c.vertexColors[i*4+2] = c.gl_FragColor[2] * 255;
+		c.vertexColors[i*4+3] = c.gl_FragColor[3] * 255;
+		
+		return true;
+  }
+  
+  function renderTriangles(c, vertices) {
+    /** The performance realistically -just isn't there- for pure-JS fragment shading.
+        Can't iterate through pixels fast enough. Instead, we'll pass JUST vertices into "fragment"
+        shader to at least emulate a portion of fragment shading; and we'll just linear interpolate
+        from one vertex to the next instead. I guess it's glorified vertex coloring, but at least
+        it'll use the fragment shader to perform the coloring. **/
+    c.gl_Position = c.gl_Position || new glMatrixArrayType(4);
+    c.fragments   = c.fragments   || [new glMatrixArrayType(2), new glMatrixArrayType(2), new glMatrixArrayType(2)];
+    c.vertexColors = c.vertexColors || new glMatrixArrayType(12);
+
+    var i, j, k, tvisible;
+    for (k = 0; k < vertices.length; k += 9) {
+      c.context.beginPath();
+      tvisible = false;
+      tvisible = plotVertex(c, vertices, 0, k)   || tvisible;
+      tvisible = plotVertex(c, vertices, 1, k+3) || tvisible;
+      tvisible = plotVertex(c, vertices, 2, k+6) || tvisible;
+      if (!tvisible) continue;
+
+  		// draw the gradient. Chrome's gradient is a bit blocky, but IE interpolates smoothly.
+  		triangleGradient(c, c.vertexColors);
+  		texturePath(c.context, c.fragments[0][0], c.fragments[0][1], c.fragments[1][0], c.fragments[1][1], c.fragments[2][0], c.fragments[2][1], c.gradientContext.canvas, 0, 0, 1, 0, 0, 1);
+  	}
+  }
+  
+  var c = Context.prototype;
+	c.render = function(vertices) {
+    renderTriangles(this, vertices);
+	};
+})();
+
+window.onload = function() {
+  var c = new Context("canvas");
+	mat4.translate(c.matrix.model, [0,0,-5]);
+
+  var triangles = new glMatrixArrayType(3*3*25);
+  for (var i = 0; i < 25; i++) {
+    var x = i % 5 - 2.5;
+    var y = parseInt(i / 5) - 2.5;
+    var j = i*9;
+    triangles[j  ] = x - 0.25;
+    triangles[j+1] = y - 0.25;
+    triangles[j+2] = 0;
+    
+    triangles[j+3] = x + 0.25;
+    triangles[j+4] = y - 0.25;
+    triangles[j+5] = 0;
+    
+    triangles[j+6] = x;
+    triangles[j+7] = y + 0.25;
+    triangles[j+8] = 0;
+  }
+  
+	function doRender() {
+		c.context.clearRect(0,0, 400,300);
+    // mat4.translate(c.matrix.model, [-0.2,0,0]);
+    mat4.rotateY(c.matrix.model, Math.PI/100, c.matrix.model);
+    
+    c.render(triangles);
+    
+    setTimeout(doRender, 1000/60);
+		updateFPS();
+	}
+
+  setTimeout(doRender, 1000 / 60);
+};
+</script>
+
+<style>
+canvas { border:1px dashed #000; }
+</style>
+</head>
+<body>
+<div id="fps"></div>
+<canvas id="canvas" width="400" height="300">
+</canvas>
+</body>
+</html>
