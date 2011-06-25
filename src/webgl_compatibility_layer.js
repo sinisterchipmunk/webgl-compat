@@ -77,10 +77,61 @@ var WebGLCompatibilityLayer = (function() {
       return 0;
     };
     
+    this.getRenderbufferParameter = function(target, pname) {
+      switch(target) {
+        case this.RENDERBUFFER:
+          if (state.bindings.renderbuffer)
+            try { return state.bindings.renderbuffer.getParameter(pname); }
+            catch(e) { generateError(e); }
+          else
+            generateError(this.INVALID_OPERATION);
+          break;
+        default: generateError(this.INVALID_ENUM);
+      }
+      return 0;
+    };
+    
     this.isFramebuffer = function(fb) {
       return fb && (fb instanceof WebGLFramebuffer) && fb.isPrepared();
     };
     
+    this.isRenderbuffer = function(rb) {
+      return rb && (rb instanceof WebGLRenderbuffer) && rb.isPrepared();
+    };
+    
+    this.createRenderbuffer = function() {
+      return new WebGLRenderbuffer();
+    };
+    
+    this.bindRenderbuffer = function(target, buffer) {
+      switch(target) {
+        case this.RENDERBUFFER:
+          if (buffer) buffer.prepare();
+          state.bindings.renderbuffer = buffer;
+          break;
+        default: generateError(this.INVALID_ENUM);
+      }
+    };
+    
+    this.deleteRenderbuffer = function(buf) {
+      if (this.isRenderbuffer(buf)) {
+        buf.dispose();
+        if (buf === state.bindings.renderbuffer) state.bindings.renderbuffer = null;
+      }
+    };
+    
+    this.renderbufferStorage = function(target, internalformat, width, height) {
+      switch(target) {
+        case this.RENDERBUFFER:
+          if (!state.bindings.renderbuffer) generateError(this.INVALID_OPERATION);
+          else
+            try { return state.bindings.renderbuffer.setStorage(internalformat, width, height); }
+            catch(e) { generateError(e); }
+          return;
+        default:
+          generateError(this.INVALID_ENUM);
+      }
+    };
     
     this.get = function(glEnum) {
       switch(glEnum) {
@@ -93,6 +144,7 @@ var WebGLCompatibilityLayer = (function() {
         case this.VENDOR: return "http://github.com/sinisterchipmunk/webgl-compat";
         case this.RENDERER: return "WebGL Compatability Layer";
         case this.FRAMEBUFFER_BINDING: return state.bindings.framebuffer;
+        case this.RENDERBUFFER_BINDING: return state.bindings.renderbuffer;
         default: throw new Error("Unexpected enum: "+glEnum);
       };
     };
