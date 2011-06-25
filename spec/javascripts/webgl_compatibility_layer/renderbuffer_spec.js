@@ -78,13 +78,25 @@ describe("Renderbuffer", function() {
       expect(CONTEXT.getError()).toEqual(CONTEXT.NO_ERROR);
     });
     
-    it("that is attached to the currently bound framebuffer", function() {
+    describe("that is attached to the currently bound framebuffer", function() {
       // if the deleted renderbuffer object is
       // attached to the currently bound framebuffer object, it is 
       // automatically detached.  However, attachments to any other framebuffer objects are the
       // responsibility of the application.
       
-      throw("pending attachment support");
+      beforeEach(function() {
+        var framebuffer = CONTEXT.createFramebuffer();
+        CONTEXT.bindFramebuffer(framebuffer);
+        CONTEXT.bindRenderbuffer(CONTEXT.RENDERBUFFER, buf);
+        CONTEXT.renderbufferStorage(CONTEXT.RENDERBUFFER, CONTEXT.RGBA4, 300, 300);
+        CONTEXT.framebufferRenderbuffer(CONTEXT.FRAMEBUFFER, CONTEXT.DEPTH_ATTACHMENT, CONTEXT.RENDERBUFFER, buf);
+        expect(CONTEXT.getError()).toEqual(CONTEXT.NO_ERROR); // sanity check
+      });
+      
+      it("should be detached from framebuffer", function() {
+        CONTEXT.deleteRenderbuffer(buf);
+        expect(CONTEXT.getFramebufferAttachmentParameter(CONTEXT.FRAMEBUFFER, CONTEXT.DEPTH_ATTACHMENT, CONTEXT.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE)).toEqual(CONTEXT.NONE);
+      });
     });
 
     describe("that is currently bound", function() {

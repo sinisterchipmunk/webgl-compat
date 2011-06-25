@@ -91,6 +91,17 @@ var WebGLCompatibilityLayer = (function() {
       return 0;
     };
     
+    this.framebufferRenderbuffer = function(target, attachment, renderbuffertarget, renderbuffer) {
+      if (target != this.FRAMEBUFFER)                                   generateError(this.INVALID_ENUM);
+      else if (renderbuffertarget != this.RENDERBUFFER && renderbuffer) generateError(this.INVALID_ENUM);
+      else if (state.bindings.framebuffer == defaultFramebuffer)        generateError(this.INVALID_OPERATION);
+      else if (renderbuffer && !this.isRenderbuffer(renderbuffer))      generateError(this.INVALID_OPERATION);
+      else {
+        try { state.bindings.framebuffer.renderbuffer(attachment, renderbuffer); }
+        catch(e) { generateError(e); }
+      }
+    };
+    
     this.isFramebuffer = function(fb) {
       return fb && (fb instanceof WebGLFramebuffer) && fb.isPrepared();
     };
@@ -116,6 +127,8 @@ var WebGLCompatibilityLayer = (function() {
     this.deleteRenderbuffer = function(buf) {
       if (this.isRenderbuffer(buf)) {
         buf.dispose();
+        if (state.bindings.framebuffer && state.bindings.framebuffer != defaultFramebuffer)
+          state.bindings.framebuffer.detachAll(buf);
         if (buf === state.bindings.renderbuffer) state.bindings.renderbuffer = null;
       }
     };

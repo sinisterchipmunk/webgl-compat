@@ -13,6 +13,80 @@ describe("Framebuffer", function() {
     });
   });
   
+  describe("attaching a renderbuffer", function() {
+    var framebuffer, renderbuffer;
+    
+    beforeEach(function() {
+      framebuffer = CONTEXT.createFramebuffer();
+      CONTEXT.bindFramebuffer(framebuffer);
+      renderbuffer = CONTEXT.createRenderbuffer();
+      CONTEXT.bindRenderbuffer(CONTEXT.RENDERBUFFER, renderbuffer);
+      CONTEXT.renderbufferStorage(CONTEXT.RENDERBUFFER, CONTEXT.RGBA4, 300, 300);
+    });
+    
+    it("should generate INVALID_OPERATION while default framebuffer is bound", function() {
+      CONTEXT.bindFramebuffer(null);
+      CONTEXT.framebufferRenderbuffer(CONTEXT.FRAMEBUFFER, CONTEXT.COLOR_ATTACHMENT0, CONTEXT.RENDERBUFFER, renderbuffer);
+      expect(CONTEXT.getError()).toEqual(CONTEXT.INVALID_OPERATION);
+    });
+    
+    it("should generate INVALID_OPERATION if renderbuffer is neither 0 nor a valid renderbuffer name", function() {
+      renderbuffer.dispose(); // makes it fail #isRenderbuffer()
+      CONTEXT.framebufferRenderbuffer(CONTEXT.FRAMEBUFFER, CONTEXT.COLOR_ATTACHMENT0, CONTEXT.RENDERBUFFER, renderbuffer);
+      expect(CONTEXT.getError()).toEqual(CONTEXT.INVALID_OPERATION);
+    });
+    
+    it("should generate INVALID_ENUM when target != FRAMEBUFFER", function() {
+      CONTEXT.framebufferRenderbuffer(CONTEXT.TEXTURE_2D, CONTEXT.COLOR_ATTACHMENT0, CONTEXT.RENDERBUFFER, renderbuffer);
+      expect(CONTEXT.getError()).toEqual(CONTEXT.INVALID_ENUM);
+    });
+    
+    it("should generate INVALID_ENUM when renderbuffertarget != RENDERBUFFER && renderbuffer != 0", function() {
+      CONTEXT.framebufferRenderbuffer(CONTEXT.FRAMEBUFFER, CONTEXT.COLOR_ATTACHMENT0, CONTEXT.GL_TEXTURE_2D, renderbuffer);
+      expect(CONTEXT.getError()).toEqual(CONTEXT.INVALID_ENUM);
+    });
+    
+    it("should generate INVALID_ENUM when attachment is not acceptable", function() {
+      CONTEXT.framebufferRenderbuffer(CONTEXT.FRAMEBUFFER, CONTEXT.GL_TEXTURE_2D, CONTEXT.RENDERBUFFER, renderbuffer);
+      expect(CONTEXT.getError()).toEqual(CONTEXT.INVALID_ENUM);
+    });
+    
+    describe("properly", function() {
+      describe("and then detaching it", function() {
+        beforeEach(function() {
+          CONTEXT.framebufferRenderbuffer(CONTEXT.FRAMEBUFFER, CONTEXT.COLOR_ATTACHMENT0, CONTEXT.RENDERBUFFER, renderbuffer);
+          CONTEXT.framebufferRenderbuffer(CONTEXT.FRAMEBUFFER, CONTEXT.COLOR_ATTACHMENT0, CONTEXT.RENDERBUFFER, null);
+        });
+        
+        it("should reset to default values", function() {
+          expect(CONTEXT.getFramebufferAttachmentParameter(CONTEXT.FRAMEBUFFER, CONTEXT.COLOR_ATTACHMENT0, CONTEXT.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE)).toEqual(CONTEXT.NONE);
+        });
+      });
+      
+      var attachmentTypes = {COLOR_ATTACHMENT0:WEBGL_CONSTANTS.COLOR_ATTACHMENT0,
+                             DEPTH_ATTACHMENT:WEBGL_CONSTANTS.DEPTH_ATTACHMENT,
+                             STENCIL_ATTACHMENT:WEBGL_CONSTANTS.STENCIL_ATTACHMENT};
+      for (var typeName in attachmentTypes) {
+        describe("to "+typeName, function() {
+          var type = attachmentTypes[typeName];
+          beforeEach(function() {
+            CONTEXT.framebufferRenderbuffer(CONTEXT.FRAMEBUFFER, type, CONTEXT.RENDERBUFFER, renderbuffer);
+          });
+
+          it("should set name", function() {
+            var v = CONTEXT.getFramebufferAttachmentParameter(CONTEXT.FRAMEBUFFER, type, CONTEXT.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+            expect(v).toBe(renderbuffer);
+          });
+
+          it("should set type to RENDERBUFFER", function() {
+            var v = CONTEXT.getFramebufferAttachmentParameter(CONTEXT.FRAMEBUFFER, type, CONTEXT.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
+            expect(v).toEqual(CONTEXT.RENDERBUFFER);
+          });
+        });
+      }
+    });
+  });
+  
   describe("querying a framebuffer", function() {
     it("should not be a framebuffer until bound", function() {
       var framebuffer = CONTEXT.createFramebuffer();
@@ -78,6 +152,20 @@ describe("Framebuffer", function() {
       CONTEXT.bindFramebuffer(null);
       CONTEXT.getFramebufferAttachmentParameter(CONTEXT.FRAMEBUFFER, CONTEXT.COLOR_ATTACHMENT0, CONTEXT.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
       expect(CONTEXT.getError()).toEqual(CONTEXT.INVALID_OPERATION);
+    });
+    
+    it("should generate INVALID_ENUM if attached object is RENDERBUFFER and pname is not OBJECT_TYPE or OBJECT_NAME", function() {
+      var buf = CONTEXT.createRenderbuffer();
+      CONTEXT.bindRenderbuffer(CONTEXT.RENDERBUFFER, buf);
+      CONTEXT.renderbufferStorage(CONTEXT.RENDERBUFFER, CONTEXT.RGBA4, 300, 300);
+      CONTEXT.framebufferRenderbuffer(CONTEXT.FRAMEBUFFER, CONTEXT.DEPTH_ATTACHMENT, CONTEXT.RENDERBUFFER, buf);
+      
+      expect(CONTEXT.getFramebufferAttachmentParameter(CONTEXT.FRAMEBUFFER, CONTEXT.DEPTH_ATTACHMENT, CONTEXT.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE)).toEqual(0);
+      expect(CONTEXT.getError()).toEqual(CONTEXT.INVALID_ENUM);
+    });
+
+    it("should generate INVALID_ENUM if attached object is TEXTURE and pname is not OBJECT_TYPE, OBJECT_NAME, TEXTURE_LEVEL, TEXTURE_CUBE_MAP_FACE", function() {
+      throw("pending texture attachment support");
     });
   });
   
